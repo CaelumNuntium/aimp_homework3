@@ -32,7 +32,7 @@ def select_galaxies():
                         if vals[7] != "P_EDGE" and float(vals[7]) > 0.8:
                             edge.write(f"nearest:B {ra[0]} {ra[1]} {ra[2]} {dec[0]} {dec[1]} {dec[2]}\n")
                             edge_count += 1
-    print(f"Found {ell_count} elliptical,{sp_count} spiral and {edge_count} edge galaxies")
+    print(f"Found {ell_count} elliptical,{sp_count} spiral and {edge_count} edge-on galaxies")
 
 
 def filter_galaxies(d_min):
@@ -169,7 +169,7 @@ def make_dataset():
     n_ell = len(elliptical_galaxies)
     n_sp = len(spiral_galaxies)
     n_edge = len(edge_galaxies)
-    print(f"{n_ell} elliptical, {n_sp} spiral and {n_edge} edge galaxies")
+    print(f"{n_ell} elliptical, {n_sp} spiral and {n_edge} edge-on galaxies")
     set_size0 = 8 * max(n_ell, n_sp, n_edge, 10000)
     for i in range(n_ell, set_size0):
         m = cv2.getRotationMatrix2D((random.randint(12, 52), random.randint(12, 52)), random.randint(-180, 180), 1)
@@ -204,8 +204,9 @@ parser.add_argument("--make_galaxy_list", action="store_true")
 parser.add_argument("--make_set", action="store_true")
 parser.add_argument("--download_images", action="store_true")
 parser.add_argument("--train_model", action="store_true")
-parser.add_argument("--predict", action="store", default="")
+parser.add_argument("--predict", nargs="+", action="store")
 args = parser.parse_args()
+str_results = ["elliptical", "spiral", "edge-on"]
 if args.make_galaxy_list:
     select_galaxies()
     exit()
@@ -222,8 +223,25 @@ if args.train_model:
     model.fit(data_train, labels_train, validation_data=(data_test, labels_test), epochs=5, batch_size=32)
     model.save("classifier.h5")
     exit()
-if args.predict != "":
+if len(args.predict) > 0:
     model = models.load_model("classifier.h5")
-    img = cv2.cvtColor(cv2.resize(cv2.imread(args.predict), (64, 64)), cv2.COLOR_BGR2RGB)
-    print(img.shape)
-    print(model.predict(numpy.array([img])))
+    for f in args.predict:
+        img = cv2.imread(f)
+        if img.shape[0] < img.shape[1]:
+            center = round(img.shape[1] / 2)
+            sz = round(img.shape[0] / 2)
+            img = numpy.copy(img[:, (center - sz):(center + sz), :])
+        else:
+            center = round(img.shape[0] / 2)
+            sz = round(img.shape[1] / 2)
+            img = numpy.copy(img[(center - sz):(center + sz), :, :])
+        img = cv2.cvtColor(cv2.resize(img, (64, 64)), cv2.COLOR_BGR2RGB)
+        print(f"{f}:")
+        res = model.predict(numpy.array([img]))
+        print(f"elliptical: {res[0][0]}")
+        print(f"spiral: {res[0][1]}")
+        print(f"edge-on: {res[0][2]}")
+        if max(res[0]) > 0.75:
+            print(f"RESULT: {str_results[numpy.argmax(res)]} galaxy\n")
+        else:
+            print(f"Not classified")
